@@ -513,25 +513,18 @@ class LeafNode(AbstractNode):
         if self.is_root():
             return True
         
-        # print("ABS distance: {}".format(abs(d_parent_query - distance_to_parent)))
-        # print("Search dist: {}".format(search_radius))
         return abs(d_parent_query - distance_to_parent)\
                 <= search_radius
         
     def search(self, query_obj, pr, nn, d_parent_query):
         for entry in self.entries:
-            #print("IN ENTRY (LEAF): {}".format(entry))
             if self.could_contain_results(query_obj,
                                           nn.search_radius(),
                                           entry.distance_to_parent,
                                           d_parent_query):
-                #print("IT COULD CONTAIN (LEAF)")
                 distance_entry_to_q = self.d(entry.obj, query_obj)
-                #print("Distance entry to q: {}".format(distance_entry_to_q))
                 if distance_entry_to_q <= nn.search_radius():
-                    #print("UPDATED NN (LEAF) w : {}".format(distance_entry_to_q))
                     nn.update(entry.obj, distance_entry_to_q)
-                    #print(nn)
 
     def get_objs(self):
         arr = []
@@ -624,36 +617,24 @@ class InternalNode(AbstractNode):
         #print(self)
 
         if self.is_root():
-#            print("It iss root")
             return True
         
-        # print("ABS distance: {}".format(abs(d_parent_query - entry.distance_to_parent)))
-        # print("Search dist: {}".format(search_radius + entry.radius))
         parent_obj = self.parent_entry.obj
         return abs(d_parent_query - entry.distance_to_parent)\
                 <= search_radius + entry.radius
             
     def search(self, query_obj, pr, nn, d_parent_query):
         for entry in self.entries:
-            #print("In ENTRY: {}".format(entry))
             if self.could_contain_results(query_obj,
                                           nn.search_radius(),
                                           entry,
                                           d_parent_query):
-                #print("IT COULD CONTAIN RESULTS")
                 d_entry_query = self.d(entry.obj, query_obj)
-                #print("Entry query: {}".format(d_entry_query))
                 entry_dmin = max(d_entry_query - \
                                      entry.radius, 0)
-                #print("Entry dmin: {}".format(entry_dmin))
                 if entry_dmin <= nn.search_radius():
                     heappush(pr, PrEntry(entry.subtree, entry_dmin, d_entry_query))
-                    #print("Curr PR: {}".format(pr))
                     entry_dmax = d_entry_query + entry.radius
-                    # if entry_dmax < nn.search_radius():
-                    #     print("NN UPDATED w: {}".format(entry_dmax))
-                    #     nn.update(None, entry_dmax)
-                    #     print(nn)
 
     def print_subtrees(self):
         all_objs = []
