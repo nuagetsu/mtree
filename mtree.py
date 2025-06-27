@@ -91,6 +91,7 @@ import abc
 from heapq import heappush, heappop
 import collections
 from itertools import combinations, islice
+import numpy as np
 
 
 def M_LB_DIST_confirmed(entries, current_routing_entry, d):
@@ -233,11 +234,13 @@ class MTree(object):
         pr = []
         heappush(pr, PrEntry(self.root, 0, 0))
 
+
         #at the end will contain the results 
         nn = NN(k)
 
         while pr:
             prEntry = heappop(pr)
+            #print("In PRENTRY: {}".format(prEntry))
             if(prEntry.dmin > nn.search_radius()):
                 #best candidate is too far, we won't have better a answer
                 #we can stop
@@ -249,6 +252,9 @@ class MTree(object):
             #prune once after handling all the entries of a node)
             
         return nn.result_list()
+    
+    def get_root(self):
+        return self.root
 
     
 NNEntry = collections.namedtuple('NNEntry', 'obj dmax')
@@ -257,7 +263,7 @@ class NN(object):
         self.elems = [NNEntry(None, float("inf"))] * size
         #store dmax in NN as described by the paper
         #but it would be more logical to store it separately
-        self.dmax = float("inf")
+        self.dmax = self.elems[-1].dmax
 
     def __len__(self):
         return len(self.elems)
@@ -270,10 +276,16 @@ class NN(object):
         return self.dmax
 
     def update(self, obj, dmax):
-        if obj == None:
-            #internal node
-            self.dmax = min(self.dmax, dmax)
-            return
+        if (isinstance(obj, np.ndarray) or isinstance(obj, list)):
+            if (obj.all() == None):
+                #internal node
+                self.dmax = min(self.dmax, dmax)
+                return
+        else:
+            if (obj == None):
+                #internal node
+                self.dmax = min(self.dmax, dmax)
+                return
         self.elems.append(NNEntry(obj, dmax))
         for i in range(len(self)-1, 0, -1):
             if self.elems[i].dmax < self.elems[i-1].dmax:
@@ -281,13 +293,17 @@ class NN(object):
             else:
                 break
         self.elems.pop()
+        self.dmax = self.elems[-1].dmax
 
     def result_list(self):
         result = map(lambda entry: entry.obj, self.elems)
         return result
 
     def __repr__(self):
-        return "NN(%r)" % self.elems
+        retstr = "NN(%r)" % self.elems + "\n DMAX: {}".format(self.dmax) 
+        #return "NN(%r)" % self.elems
+        #return "DMAX: {}".format(self.dmax)
+        return retstr
             
 
 class PrEntry(object):
@@ -338,6 +354,9 @@ class Entry(object):
             self.distance_to_parent,
             self.radius,
             self.subtree.repr_class() if self.subtree else self.subtree)
+    
+    def get_subtree(self):
+        return self.subtree
 
 
 class AbstractNode(object):
@@ -494,18 +513,38 @@ class LeafNode(AbstractNode):
         if self.is_root():
             return True
         
+        # print("ABS distance: {}".format(abs(d_parent_query - distance_to_parent)))
+        # print("Search dist: {}".format(search_radius))
         return abs(d_parent_query - distance_to_parent)\
                 <= search_radius
         
     def search(self, query_obj, pr, nn, d_parent_query):
         for entry in self.entries:
+            #print("IN ENTRY (LEAF): {}".format(entry))
             if self.could_contain_results(query_obj,
                                           nn.search_radius(),
                                           entry.distance_to_parent,
                                           d_parent_query):
+                #print("IT COULD CONTAIN (LEAF)")
                 distance_entry_to_q = self.d(entry.obj, query_obj)
+                #print("Distance entry to q: {}".format(distance_entry_to_q))
                 if distance_entry_to_q <= nn.search_radius():
+                    #print("UPDATED NN (LEAF) w : {}".format(distance_entry_to_q))
                     nn.update(entry.obj, distance_entry_to_q)
+                    #print(nn)
+
+    def get_objs(self):
+        arr = []
+        for entry in self.entries:
+            arr.append(entry.obj)
+        return arr
+    
+    def __repr__(self):
+        entries = ""
+        for entry in self.entries:
+            entries += str(entry) + "\n"
+        
+        return entries
     
 class InternalNode(AbstractNode):
     """An internal node of the M-tree"""
@@ -530,8 +569,14 @@ class InternalNode(AbstractNode):
         #too magic for me plus there is potentially a very large number of
         #calls to memoize
         dist_to_obj = {}
-        for entry in self.entries:
-            dist_to_obj[entry] = self.d(obj, entry.obj)
+        if (self.parent_entry):
+            d_p = self.d(obj, self.parent_entry.obj)
+
+            for entry in self.entries:
+                dist_to_obj[entry] = abs(d_p - entry.distance_to_parent)
+        else:
+            for entry in self.entries:
+                dist_to_obj[entry] = self.d(obj, entry.obj)
 
         def find_best_entry_requiring_no_covering_radius_increase():
             valid_entries = [e for e in self.entries
@@ -576,27 +621,56 @@ class InternalNode(AbstractNode):
         """Determines without any d computation if there could be
         objects in the subtree belonging to the result.
         """
+        #print(self)
+
         if self.is_root():
+#            print("It iss root")
             return True
         
+        # print("ABS distance: {}".format(abs(d_parent_query - entry.distance_to_parent)))
+        # print("Search dist: {}".format(search_radius + entry.radius))
         parent_obj = self.parent_entry.obj
         return abs(d_parent_query - entry.distance_to_parent)\
                 <= search_radius + entry.radius
             
     def search(self, query_obj, pr, nn, d_parent_query):
         for entry in self.entries:
+            #print("In ENTRY: {}".format(entry))
             if self.could_contain_results(query_obj,
                                           nn.search_radius(),
                                           entry,
                                           d_parent_query):
+                #print("IT COULD CONTAIN RESULTS")
                 d_entry_query = self.d(entry.obj, query_obj)
+                #print("Entry query: {}".format(d_entry_query))
                 entry_dmin = max(d_entry_query - \
                                      entry.radius, 0)
+                #print("Entry dmin: {}".format(entry_dmin))
                 if entry_dmin <= nn.search_radius():
                     heappush(pr, PrEntry(entry.subtree, entry_dmin, d_entry_query))
+                    #print("Curr PR: {}".format(pr))
                     entry_dmax = d_entry_query + entry.radius
-                    if entry_dmax < nn.search_radius():
-                        nn.update(None, entry_dmax)
+                    # if entry_dmax < nn.search_radius():
+                    #     print("NN UPDATED w: {}".format(entry_dmax))
+                    #     nn.update(None, entry_dmax)
+                    #     print(nn)
+
+    def print_subtrees(self):
+        all_objs = []
+        for entry in self.entries:
+            print("ONE ENTRY SIDE")
+            subtree = entry.get_subtree()
+            objs = subtree.get_objs()
+            all_objs.append(objs)
+            print(subtree)
+        return all_objs
+
+    def __repr__(self):
+        entries = ""
+        for entry in self.entries:
+            entries += str(entry) + "\n"
+        
+        return entries
                         
 #A lot of the code is duplicated to do the same operation on the existing_node
 #and the new node :(. Could prevent that by creating a set of two elements and

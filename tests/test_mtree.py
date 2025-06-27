@@ -1,4 +1,16 @@
 #python < 2.7 compatibility
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+import torchvision
+from torch.utils.data import DataLoader, TensorDataset, Sampler, random_split, Dataset, Subset
+from torchvision import datasets, transforms
+
+import matplotlib.pyplot as plt
+import numpy as np
+import random
+
 try:
     import unittest2 as unittest
 except ImportError:
@@ -7,7 +19,11 @@ import collections
 from functools import reduce
 #import both way because I want to access the public elements of the module
 #without the mtree. prefix while also being able to access non public elements.
-from mtree import *
+from mtree import MTree, M_LB_DIST_confirmed, M_LB_DIST_non_confirmed, generalized_hyperplane
+import sys
+# caution: path[0] is reserved for script path (or '' in REPL)
+sys.path.insert(1, '/home/jovyan/')
+from src.helpers.MetricUtilities import distance
 import mtree
 
 
@@ -26,6 +42,28 @@ def d_id(obj1, obj2):
 def d_int(i1, i2):
     """d implementation for integers"""
     return abs(i1 - i2)
+
+def mnist_test_dataload():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    transform = transforms.Compose([
+    transforms.Resize((32, 32)),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,))
+    ])
+    MNIST_data= torchvision.datasets.MNIST(root="../../data", train=False, transform=transform)
+    sample_indices = random.sample(range(len(MNIST_data)), 500)
+    sampled_test_data = Subset(MNIST_data, sample_indices)
+
+    input_dataset = []
+    testSample = []
+    num = len(sampled_test_data)
+    for i in range(len(sampled_test_data)):
+        img_tensor = sampled_test_data[i][0] 
+        input_dataset.append(img_tensor.unsqueeze(0).to(device).float())
+        img_numpy = img_tensor.squeeze().squeeze().cpu().numpy().astype(np.float32)
+        testSample.append(img_numpy)
+    
+    return testSample
 
 class MTreeInitBadInput(unittest.TestCase):    
     def test_none_d(self):
@@ -85,6 +123,32 @@ class MTreeLength(unittest.TestCase):
         self.assertEqual(len(tree), 2)
         tree.add_all([1, 2, 3])
         self.assertEqual(len(tree), 5)
+
+@whitebox
+class MTreeImageData(unittest.TestCase):
+    def test_images(self):
+        tree = MTree(distance)
+        testSamples = mnist_test_dataload()
+        tree.add_all(testSamples)
+        print(tree_len(tree))
+        self.assertEqual(tree_len(tree), 500)
+        test_img = testSamples[0]
+        l = tree.search(test_img)
+        with np.printoptions(threshold=np.inf):
+            #print(arr)
+            #print(list(l))
+            #print(testSamples[0])
+            #print((list(l) == testSamples[0])) # AAA WHY IS IT FALSE later come back and print w everyth...
+            file = open("arr_output.txt", "w")
+            file.write(str(list(l)))
+            #plt.imshow(list(l)[0], cmap='gray')
+            #plt.savefig('nearest_img.png')
+            #plot_original_images(list(l), testSamples[0], 1, 2)
+        #self.assertEqual(list(l), list(testSamples[0]))
+
+
+
+
 
 @whitebox
 class MTreeAdd(unittest.TestCase):
